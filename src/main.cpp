@@ -12,6 +12,13 @@ void setup() {
     bleBridge.begin();
 }
 
+unsigned long timerSend = 0;
+
 void loop() {
     bleBridge.loop();
+
+    if(millis() - timerSend > 5000) {
+        timerSend = millis();
+        Serial2.println("STATUS:LOOP_RUNNING");
+    }
 }
