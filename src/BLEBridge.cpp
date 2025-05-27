@@ -1,26 +1,11 @@
 #include "BLEBridge.h"
 #include <Arduino.h>
 
-
 bool BLEBridge::deviceConnected = false;
 bool BLEBridge::oldDeviceConnected = false;
 bool BLEBridge::isShutDown = false;
 
 BLEBridge::BLEBridge(int rxPin, int txPin) : rxPin(rxPin), txPin(txPin) {}
-
-// class BLEBridge::ServerCallbacks : public NimBLEServerCallbacks {
-//     BLEBridge* parent;
-// public:
-//     ServerCallbacks(BLEBridge* parent) : parent(parent) {}
-//     void onConnect(NimBLEServer* pServer) override {
-//         parent->deviceConnected = true;
-//         Serial2.println("STATUS:BLE_CONNECTED");
-//     }
-//     void onDisconnect(NimBLEServer* pServer) override {
-//         parent->deviceConnected = false;
-//         Serial2.println("STATUS:BLE_DISCONNECTED");
-//     }
-// };
 
 // /* Server Callbacks */
 class ServerCallbacks : public NimBLEServerCallbacks {
@@ -41,7 +26,6 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 };
 
 
-
 /* Characteristic Callbacks */
 class CharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic) override {
@@ -53,69 +37,6 @@ class CharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     }
 };
 
-// class BLEBridge::RxCallback : public NimBLECharacteristicCallbacks {
-//     BLEBridge* parent;
-// public:
-//     RxCallback(BLEBridge* parent) : parent(parent) {}
-//     void onWrite(NimBLECharacteristic* pCharacteristic) override {
-
-//         std::string rxValue = pCharacteristic->getValue();
-//         if (!rxValue.empty()) {
-//             String _rxValue = rxValue.c_str();
-
-//             Serial.println("[BLEBridge::RxCallback] RECEIVED over BLE and SEND over SERIAL2 -> " + _rxValue);
-//             Serial2.println(_rxValue);
-
-//             // Serial2.write((uint8_t*)rxValue.data(), rxValue.length());
-//         }
-//     }
-// };
-
-void BLEBridge::begin() {
-    Serial2.begin(9600, SERIAL_8N1, rxPin, txPin);
-    Serial2.println("BLE_BRIDGE_STARTED");
-
-    loadConfig();
-    setupBLE();
-    setupWatchdog();
-}
-
-void BLEBridge::setupBLE() {
-    NimBLEDevice::init(deviceName.c_str());
-    NimBLEDevice::setPower(ESP_PWR_LVL_N12); //manter?
-
-    pServer = NimBLEDevice::createServer();
-    pServer->setCallbacks(new ServerCallbacks());
-
-    NimBLEService* pService = pServer->createService(serviceUUID.c_str());
-
-    pTxCharacteristic = pService->createCharacteristic(
-        characteristicUUID_TX.c_str(),
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::INDICATE
-    );
-
-    pRxCharacteristic = pService->createCharacteristic(
-        characteristicUUID_RX.c_str(),
-        NIMBLE_PROPERTY::WRITE
-    );
-
-    // pRxCharacteristic->setCallbacks(new RxCallback(this));
-    pRxCharacteristic->setCallbacks(new CharacteristicCallbacks());
-    pService->start();
-
-    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(serviceUUID.c_str());
-    pAdvertising->setScanResponse(true);
-    pAdvertising->start();
-
-    // pAdvertising = NimBLEDevice::getAdvertising();
-    // pAdvertising->addServiceUUID(serviceUUID.c_str());
-    // pAdvertising->setScanResponse(true);
-    // pAdvertising->start();
-
-    Serial2.println("OK:BLE_ADVERTISING_STARTED");
-}
-
 void BLEBridge::setupWatchdog() {
     const int WDT_TIMEOUT = 8;
     esp_task_wdt_init(WDT_TIMEOUT, true);
@@ -126,18 +47,139 @@ void BLEBridge::feedWatchdog() {
     esp_task_wdt_reset();
 }
 
+void BLEBridge::begin() {
+    Serial2.begin(9600, SERIAL_8N1, rxPin, txPin);
+
+    loadConfig();
+    delay(100);
+
+
+    NimBLEDevice::init(deviceName.c_str());
+    NimBLEDevice::setPower(ESP_PWR_LVL_N12);
+
+    initServer();
+    initServices();
+    startAdvertising();
+
+    setupWatchdog();
+}
+
+
+void BLEBridge::initServer() {
+    Serial.println("initServer()");
+    pServer = NimBLEDevice::createServer();
+    pServer->setCallbacks(new ServerCallbacks());
+}
+
+void BLEBridge::initServices() {
+    Serial.println("initServices()");
+
+    NimBLEService* pService = pServer->createService(serviceUUID.c_str());
+
+    pTxCharacteristic = pService->createCharacteristic(
+        characteristicUUID_TX.c_str(),
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::INDICATE // Adicionado `READ` e `INDICATE`
+    
+    );
+
+    pRxCharacteristic = pService->createCharacteristic(
+        characteristicUUID_RX.c_str(),
+        NIMBLE_PROPERTY::WRITE
+    );
+
+    pRxCharacteristic->setCallbacks(new CharacteristicCallbacks());
+    pService->start();
+}
+
+void BLEBridge::startAdvertising() {
+    Serial.println("startAdvertising()");
+
+    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(serviceUUID.c_str());
+    pAdvertising->setScanResponse(true);
+    pAdvertising->start();
+    Serial.println("OK:BLE_ADVERTISING_STARTED");
+    Serial2.println("OK:BLE_ADVERTISING_STARTED");
+}
+
+
+void BLEBridge::stopAdvertising() {
+    NimBLEDevice::getAdvertising()->stop();
+    Serial.println("OK:BLE_ADVERTISING_STOPPED");
+    delay(10);
+}
+
+bool BLEBridge::isConnected() {
+    return deviceConnected;
+}
+
+void BLEBridge::notifyClients(String data) {
+    if (deviceConnected && pTxCharacteristic) {
+        pTxCharacteristic->setValue(std::string(data.c_str()));
+
+        if (pTxCharacteristic->getSubscribedCount() > 0) {  // Verifica se há clientes inscritos
+            pTxCharacteristic->notify();
+            Serial.println("SEND DATA OVER BLE -> " + data);
+        } else {
+            Serial.println("{NimBLEServerApp} -> Nenhum cliente inscrito para notificações.");
+        }
+    }
+}
+
+
+void BLEBridge::removeServices() {
+    if (!pServer) {
+        Serial.println("BLE -> Nenhum servidor BLE ativo para remover serviços.");
+        return;
+    }
+
+    Serial.println("BLE -> Removendo serviços BLE...");
+
+    NimBLEService* pService = pServer->getServiceByUUID(serviceUUID.c_str());
+    if (pService) {
+        Serial.println("BLE -> Parando serviço BLE...");
+
+        Serial.println("BLE -> Removendo características...");
+        pService->removeCharacteristic(pTxCharacteristic);
+        pService->removeCharacteristic(pRxCharacteristic);
+
+        Serial.println("BLE -> Removendo serviço...");
+        pServer->removeService(pService);
+    } else {
+        Serial.println("BLE -> Serviço não encontrado.");
+    }
+
+    pTxCharacteristic = nullptr;
+    pRxCharacteristic = nullptr;
+
+    Serial.println("BLE -> Serviços BLE removidos com sucesso.");
+    delay(10);
+}
+
+void BLEBridge::shutdown(){
+    BLEBridge::isShutDown = true;
+    Serial.println("{NimBLEServerApp} -> Shutting down BLE");
+
+    stopAdvertising();
+    removeServices();
+    NimBLEDevice::deinit();
+    delay(100);
+
+    Serial.println("{NimBLEServerApp} -> BLE completely disabled");
+}
+
+
+
 void BLEBridge::processCommand(const String& input) {
     if (input.startsWith("CONFIG:")) {
         String params = input.substring(7);
 
-        //CONFIG:NAME=Scheer Firetech;SVC=30e3d633-a01d-4115-90f5-0754c9c5891f;RX=c5b922f2-f58d-4026-beb3-cdf0c83a5a41;TX=db6da158-884e-4977-ace1-a3af822bae6d
         int nameIndex = params.indexOf("NAME=");
         int svcIndex = params.indexOf("SVC=");
         int rxIndex = params.indexOf("RX=");
         int txIndex = params.indexOf("TX=");
 
         if (nameIndex == -1 || svcIndex == -1 || rxIndex == -1 || txIndex == -1) {
-            Serial2.println("ERROR:INVALID_CONFIG_FORMAT");
             return;
         }
 
@@ -148,8 +190,8 @@ void BLEBridge::processCommand(const String& input) {
 
         saveConfig(name, svc, rx, tx);
 
-        Serial2.println("OK:CONFIG_SAVED_RESTARTING");
         Serial.println("OK:CONFIG_SAVED_RESTARTING");
+        Serial2.println("OK:CONFIG_SAVED_RESTARTING");
         delay(200);
         ESP.restart();
     }
@@ -161,10 +203,9 @@ void BLEBridge::processCommand(const String& input) {
     else {
         if (deviceConnected) {
             Serial.println("[BLEBridge::processCommand()]: SEND over BLE -> " + input);
-            pTxCharacteristic->setValue(input.c_str());
-            pTxCharacteristic->notify();
+            notifyClients(input);
         } else {
-            Serial2.println("ERROR:BLE_NOT_CONNECTED");
+            // Serial2.println("ERROR:BLE_NOT_CONNECTED");
         }
     }
 }
@@ -173,7 +214,7 @@ static String input = "";
 static bool receiving = false;
 
 void BLEBridge::checkSerialCommands() {
-    if (Serial2.available()) {
+    if (Serial2.available() > 0) {
         char c = Serial2.read();
 
         if (c == '[') {
@@ -191,11 +232,9 @@ void BLEBridge::checkSerialCommands() {
             input = "";
         } else if (receiving) {
             input += c;
-            // Serial.println("Serial → BLE: " + input);
 
             if (input.length() > 256) {
                 Serial.println("ERROR:INPUT_OVERFLOW");
-                Serial2.println("ERROR:INPUT_OVERFLOW");
                 input = "";
                 receiving = false;
             }
@@ -203,18 +242,9 @@ void BLEBridge::checkSerialCommands() {
     }
 }
 
-
-// void BLEBridge::keepAdvertising() {
-//     if (!pAdvertising->isAdvertising()) {
-//         pAdvertising->start();
-//         Serial2.println("WARNING:ADVERTISING_RESTARTED");
-//     }
-// }
-
 void BLEBridge::loop() {
     checkSerialCommands();
     feedWatchdog();
-    // keepAdvertising();
 }
 
 void BLEBridge::saveConfig(String name, String svc, String rx, String tx) {
@@ -228,7 +258,7 @@ void BLEBridge::saveConfig(String name, String svc, String rx, String tx) {
 
 void BLEBridge::loadConfig() {
     preferences.begin("BLEBridge", true);
-    deviceName = preferences.getString("name", "ESP32-BLE");
+    deviceName = preferences.getString("name", "ESP32 BLE");
     serviceUUID = preferences.getString("svc", "6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
     characteristicUUID_RX = preferences.getString("rx", "6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
     characteristicUUID_TX = preferences.getString("tx", "6E400003-B5A3-F393-E0A9-E50E24DCCA9E");

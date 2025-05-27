@@ -13,35 +13,37 @@ public:
 
     void begin();
     void loop();
+
+    void shutdown();
+    void notifyClients(String data);
+    void startAdvertising();
+    void stopAdvertising();
+    bool isConnected();
     
     static bool deviceConnected;
     static bool oldDeviceConnected;
     static bool isShutDown;
 
 private:
+
+    NimBLEServer *pServer;
+    NimBLECharacteristic *pTxCharacteristic;
+    NimBLECharacteristic *pRxCharacteristic; 
+
+    void initServer();
+    void initServices();
+    void removeServices();
+
     String deviceName;
     String serviceUUID;
     String characteristicUUID_RX;
     String characteristicUUID_TX;
-
-
-    // NimBLEServer* pServer = nullptr;
-    // NimBLECharacteristic* pTxCharacteristic = nullptr;
-    // NimBLECharacteristic* pRxCharacteristic = nullptr;
-
-    NimBLEServer *pServer;
-    NimBLECharacteristic *pTxCharacteristic;
-    NimBLECharacteristic *pRxCharacteristic;
-
-    // NimBLEAdvertising* pAdvertising = nullptr;
-    // bool deviceConnected = false;
 
     int rxPin;
     int txPin;
 
     Preferences preferences;
 
-    void setupBLE();
     void processCommand(const String& input);
     void checkSerialCommands();
     void keepAdvertising();
@@ -51,7 +53,4 @@ private:
 
     void loadConfig();
     void saveConfig(String name, String svc, String rx, String tx);
-
-    // class ServerCallbacks;
-    // class RxCallback;
 };

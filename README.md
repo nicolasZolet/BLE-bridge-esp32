@@ -1,107 +1,118 @@
-# 📘 ESP32 BLE ↔ Serial Bridge
+
+# 🔗 BLEBridge — Ponte Serial ↔️ BLE
 
 ## 🚀 Descrição
-Este firmware transforma um ESP32 em uma ponte BLE ↔ Serial, permitindo comunicação bidirecional entre dispositivos BLE e outro microcontrolador conectado via UART (Serial2).
+O **BLEBridge** é um firmware para ESP32 que permite criar uma ponte de comunicação entre uma interface **Serial TTL (UART)** e um dispositivo BLE (**Bluetooth Low Energy**). 
 
-- ✅ Permite alteração dinâmica de nome, UUIDs e configuração do BLE.
-- ✅ Watchdog ativo para proteção contra travamentos.
-- ✅ Proteção contra overflow da UART.
-- ✅ Fail-safe para garantir que o advertising BLE nunca pare.
+Toda mensagem recebida pelo **BLE** é transmitida pela **Serial2**, e toda mensagem recebida pela **Serial2** é enviada pelo **BLE**.
 
-## 🛠️ Configuração de Hardware
+Permite também configuração dinâmica do nome do dispositivo BLE e dos UUIDs via comandos pela Serial.
 
-| Função | ESP32 GPIO |
-|--------|-------------|
-| **RX2** (recebe do ESP principal) | GPIO 16 |
-| **TX2** (envia para o ESP principal) | GPIO 17 |
+---
 
-## 🔌 Configuração de Software
+## 📜 Protocolo de Comunicação
 
-- ✔️ Framework: PlatformIO ou Arduino IDE.
-- ✔️ Biblioteca BLE utilizada: [`NimBLE-Arduino`](https://github.com/h2zero/NimBLE-Arduino).
-
-## 🔥 Mapa de Comandos (Serial2 → ESP32)
-
-| Comando         | Descrição                                                | Exemplo                                    | Resposta                             |
-|-----------------|----------------------------------------------------------|--------------------------------------------|--------------------------------------|
-| `NAME:<name>`   | Atualiza o nome do dispositivo BLE                       | `NAME:BLE_TEST`                            | `OK:NAME_UPDATED:BLE_TEST`           |
-| `SVC:<uuid>`    | Atualiza o UUID do serviço BLE                           | `SVC:6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | `OK:SERVICE_UUID_UPDATED:<uuid>`     |
-| `RX:<uuid>`     | Atualiza o UUID da characteristic RX                     | `RX:6E400002-B5A3-F393-E0A9-E50E24DCCA9E`  | `OK:SERVICE_UUID_RX_UPDATED:<uuid>`  |
-| `TX:<uuid>`     | Atualiza o UUID da characteristic TX                     | `TX:6E400003-B5A3-F393-E0A9-E50E24DCCA9E`  | `OK:SERVICE_UUID_TX_UPDATED:<uuid>`  |
-| `BOND:CLEAR`    | Remove todos os dispositivos emparelhados (bonds)        |                                            | `OK:BONDS_CLEARED`                   |
-| `RESET`         | Reinicia o ESP32                                         |                                            | `OK:RESETTING`                       |
-| `VERSION`       | Retorna a versão do firmware                             |                                            | `OK:FIRMWARE:BLE_BRIDGE_V1.0.0`      |
-| `<texto livre>` | Dados enviados para o cliente BLE conectado              | `Hello BLE`                                | - (Enviado via BLE)                  |
-
-## 🔁 Mensagens automáticas da ponte BLE → Serial2
-
-| Evento                                    | Mensagem enviada na Serial2      |
-|-------------------------------------------|----------------------------------|
-| ESP32 iniciado                            | `BLE_BRIDGE_STARTED`             |
-| Advertising BLE iniciado                  | `OK:BLE_ADVERTISING_STARTED`     |
-| Cliente BLE conectado                     | `STATUS:BLE_CONNECTED`           |
-| Cliente BLE desconectado                  | `STATUS:BLE_DISCONNECTED`        |
-| Advertising reiniciado (fail-safe)        | `WARNING:ADVERTISING_RESTARTED`  |
-| BLE não conectado (ao tentar enviar dado) | `ERROR:BLE_NOT_CONNECTED`        |
-| Overflow na UART Serial2                  | `ERROR:INPUT_OVERFLOW`           |
-
-## ⚙️ Comportamento BLE ↔ Serial
-
-### ✔️ BLE → Serial2
-- Todo dado recebido na characteristic RX do BLE é **imediatamente enviado via Serial2**.
-
-### ✔️ Serial2 → BLE
-- Se o ESP32 estiver com um cliente BLE conectado, qualquer linha recebida na Serial2 (**terminada por `\n`**) será enviada via BLE na characteristic TX.
-- Se não houver cliente conectado, retorna `ERROR:BLE_NOT_CONNECTED`.
-
-## 🏗️ Fail-safes implementados
-
-- ✔️ **Watchdog:** reinicia o ESP em caso de travamento de software ou sobrecarga.
-- ✔️ **Proteção contra overflow:** se um comando exceder 256 caracteres sem um `\n`, o buffer é limpo e retorna `ERROR:INPUT_OVERFLOW`.
-- ✔️ **Advertising fail-safe:** Se por qualquer motivo o advertising parar, ele é automaticamente reiniciado e notificado com `WARNING:ADVERTISING_RESTARTED`.
-
-## 🧠 Exemplo de Fluxo Operacional
-
-1️⃣ ESP32 inicializa:
+### 🔗 **Formato dos Pacotes**
+- Todos os pacotes são delimitados por:
 ```
-BLE_BRIDGE_STARTED
-OK:BLE_ADVERTISING_STARTED
+[ ... ]
+```
+- Exemplo de pacote válido:
+```
+[CONFIG:NAME=Scheer Firetech;SVC=30e3d633-a01d-4005-90f5-0754c9c5891f;RX=c5b922f2-f00d-4026-beb3-cdf0c00a5a41;TX=db6da158-884e-4977-ace1-a3af800bae6d]
 ```
 
-2️⃣ Cliente BLE conecta:
+---
+
+## ⚙️ Comandos Serial → BLEBridge
+
+| Comando | Descrição |
+|---------|------------|
+| `[CONFIG:NAME=<nome>;SVC=<serviceUUID>;RX=<rxUUID>;TX=<txUUID>]` | 🔧 Configura nome e UUIDs do BLE. Salva na memória e reinicia. |
+| `[VERSION]` | 🔖 Retorna a versão atual do firmware. |
+| `[RESET_CONFIG]` | 🧹 Limpa as configurações salvas (Preferences) e reinicia. |
+| `[<qualquer dado>]` | 🚀 Qualquer dado dentro de `[...]` será enviado via BLE se houver conexão. |
+
+---
+
+## 🔔 Respostas BLEBridge → Serial
+
+| Mensagem | Descrição |
+|----------|-----------|
+| `STATUS:BLE_CONNECTED` | ✅ Cliente BLE conectado. |
+| `STATUS:BLE_DISCONNECTED` | ⚠️ Cliente BLE desconectado. |
+| `OK:BLE_ADVERTISING_STARTED` | 🔵 BLE está em modo advertising. |
+| `OK:CONFIG_SAVED_RESTARTING` | ✅ Configuração salva, dispositivo reiniciando. |
+| `OK:FIRMWARE:BLE_BRIDGE_V1.0.0` | 🔖 Versão atual do firmware. |
+| `OK:CONFIG_CLEARED_RESTARTING` | 🧹 Configuração apagada, reiniciando. |
+| `ERROR:INVALID_CONFIG_FORMAT` | ❌ Formato de configuração inválido. |
+| `ERROR:INPUT_OVERFLOW` | ❌ Dados recebidos excederam o limite permitido (256 bytes). |
+| `ERROR:SERIAL_TIMEOUT` | ⚠️ Timeout aguardando fechamento do pacote (`]`). |
+
+---
+
+## 💾 Memória Persistente (Preferences)
+
+- O BLEBridge salva as seguintes informações na memória flash:
+  - 🔹 Nome do dispositivo BLE (`NAME`)
+  - 🔹 Service UUID (`SVC`)
+  - 🔹 RX UUID (`RX`)
+  - 🔹 TX UUID (`TX`)
+
+Se não houver dados salvos, ele utiliza os valores padrão:
+- Name: `Scheer Firetech`
+- Service UUID: `30e3d633-a01d-4115-90f5-0754c9c5891f`
+- RX UUID: `c5b922f2-f58d-4026-beb3-cdf0c83a5a41`
+- TX UUID: `db6da158-884e-4977-ace1-a3af822bae6d`
+
+---
+
+## 📦 Arquitetura do Projeto
+
+```
+.
+├── src/
+│   ├── BLEBridge.cpp     # Implementação da ponte BLE ↔️ Serial
+│   ├── BLEBridge.h       # Header da classe BLEBridge
+│   └── main.cpp          # Inicialização principal
+├── include/
+│   └── (headers se necessário)
+├── platformio.ini        # Configuração PlatformIO
+├── README.md             # Documentação
+```
+
+---
+
+## 🚀 Exemplo Completo de Uso
+
+1️⃣ Enviar configuração:
+```
+[CONFIG:NAME=Scheer Firetech;SVC=30e3d633-a01d-4115-90f5-0754c9c5891f;RX=c5b922f2-f58d-4026-beb3-cdf0c83a5a41;TX=db6da158-884e-4977-ace1-a3af822bae6d]
+```
+
+2️⃣ Após reinício, enviar dados:
+```
+[8040862A13D8,GL,1,0,RT,0,LP,0,FW,1.1.11,BM,PLUS,DM,0,WF,1]
+```
+→ Dados são enviados para qualquer cliente BLE conectado.
+
+3️⃣ Receber status:
 ```
 STATUS:BLE_CONNECTED
-```
-
-3️⃣ Envia dados via Serial2:
-```
-Hello BLE\n
-```
-→ **Dado é transmitido via BLE**
-
-4️⃣ Cliente desconecta:
-```
 STATUS:BLE_DISCONNECTED
 ```
 
-## 🔩 Sugestão de Integração (Microcontrolador Principal)
+---
 
-- Enviar comandos como strings terminadas com `\n`.
-- Ler a Serial2 continuamente para capturar:
-  - Logs de status (`STATUS:*`).
-  - Confirmações (`OK:*`).
-  - Erros (`ERROR:*`).
-  - Dados recebidos via BLE (texto puro).
+## 🔥 Cuidados
 
-## 🔥 Comandos mínimos recomendados para inicialização:
-```
-NAME:BLE_BRIDGE_01
-SVC:6E400001-B5A3-F393-E0A9-E50E24DCCA9E
-RX:6E400002-B5A3-F393-E0A9-E50E24DCCA9E
-TX:6E400003-B5A3-F393-E0A9-E50E24DCCA9E
-```
+- ✔️ Sempre enviar dados dentro de `[ ... ]`.
+- ✔️ Máximo de 256 caracteres por pacote.
+- ✔️ Se enviar `[` sem `]`, ocorre timeout e descarte do pacote.
+- ✔️ Reset do ESP ocorre automaticamente após configuração.
 
-## 🏆 Autor e Manutenção
-Desenvolvido por Nicolas Zolet.
+---
 
-Este firmware foi projetado para ser robusto, seguro e de alta disponibilidade para aplicações industriais, automação, sensores, gateways BLE ↔ UART e muito mais.
+## 📜 Licença
+
+Este projeto é de uso privado e controlado pela empresa **Scheer Firetech**.
