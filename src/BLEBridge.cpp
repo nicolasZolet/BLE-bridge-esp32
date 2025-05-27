@@ -55,7 +55,7 @@ void BLEBridge::begin() {
 
 
     NimBLEDevice::init(deviceName.c_str());
-    NimBLEDevice::setPower(ESP_PWR_LVL_N12);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
     initServer();
     initServices();
@@ -189,10 +189,12 @@ void BLEBridge::processCommand(const String& input) {
         String tx = params.substring(txIndex + 3);
 
         saveConfig(name, svc, rx, tx);
-
-        Serial.println("OK:CONFIG_SAVED_RESTARTING");
+        delay(100);
         Serial2.println("OK:CONFIG_SAVED_RESTARTING");
-        delay(200);
+        delay(100);
+        Serial.println("OK:CONFIG_SAVED_RESTARTING");
+        delay(100);
+
         ESP.restart();
     }
 
@@ -224,11 +226,12 @@ void BLEBridge::checkSerialCommands() {
             receiving = false;
             input.trim();
 
+            Serial.println("[BLEBridge::checkSerialCommands()]: RECEIVED over SERIAL 2 → " + input);
+
             if (input.length() > 0) {
                 processCommand(input);
             }
 
-            Serial.println("[BLEBridge::checkSerialCommands()]: RECEIVED over SERIAL 2 → " + input);
             input = "";
         } else if (receiving) {
             input += c;
