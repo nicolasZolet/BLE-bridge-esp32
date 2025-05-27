@@ -49,7 +49,8 @@ void BLEBridge::feedWatchdog() {
 
 void BLEBridge::begin() {
     Serial2.begin(9600, SERIAL_8N1, rxPin, txPin);
-
+    delay(10);
+    
     loadConfig();
     delay(100);
 
