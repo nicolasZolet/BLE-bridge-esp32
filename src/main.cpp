@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "BLEBridge.h"
 
-#define RXD2 4
+#define RXD2 17
 #define TXD2 16
 
 BLEBridge bleBridge(RXD2, TXD2);
